@@ -16,6 +16,9 @@ $sql_settings = mysqli_query($mysqli, "SELECT config_azure_client_id, config_azu
     config_login_message, config_login_remember_me_expire, config_mail_from_email,
     config_mail_from_name, config_mail_oauth_access_token,
     config_mail_oauth_access_token_expires_at, config_mail_oauth_client_id,
+    config_mail_oauth_app_access_token, config_mail_oauth_app_access_token_expires_at,
+    config_mail_oauth_app_client_id, config_mail_oauth_app_client_secret,
+    config_mail_oauth_app_tenant_id,
     config_mail_oauth_client_secret, config_mail_oauth_refresh_token,
     config_mail_oauth_tenant_id, config_module_enable_accounting, config_module_enable_itdoc,
     config_module_enable_ticketing, config_project_next_number, config_project_prefix,
@@ -66,6 +69,13 @@ $config_mail_oauth_tenant_id = $row['config_mail_oauth_tenant_id'];
 $config_mail_oauth_refresh_token = $row['config_mail_oauth_refresh_token'];
 $config_mail_oauth_access_token = $row['config_mail_oauth_access_token'];
 $config_mail_oauth_access_token_expires_at = $row['config_mail_oauth_access_token_expires_at'];
+
+// Mail - Microsoft Application OAuth 2.0
+$config_mail_oauth_app_tenant_id = $row['config_mail_oauth_app_tenant_id'];
+$config_mail_oauth_app_client_id = $row['config_mail_oauth_app_client_id'];
+$config_mail_oauth_app_client_secret = $row['config_mail_oauth_app_client_secret'];
+$config_mail_oauth_app_access_token = $row['config_mail_oauth_app_access_token'];
+$config_mail_oauth_app_access_token_expires_at = $row['config_mail_oauth_app_access_token_expires_at'];
 
 // Defaults
 $config_start_page = $row['config_start_page'] ?? 'clients.php';
