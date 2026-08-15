@@ -10,8 +10,12 @@ function renderMailStatusDot($on) {
 
 $smtp_on = !empty($config_smtp_provider);
 $imap_on = !empty($config_imap_provider);
-$oauth_needed = in_array($config_smtp_provider, ['google_oauth', 'microsoft_oauth'], true)
-             || in_array($config_imap_provider, ['google_oauth', 'microsoft_oauth'], true);
+$delegated_oauth_providers = ['google_oauth', 'microsoft_oauth'];
+$delegated_oauth_needed = in_array($config_smtp_provider, $delegated_oauth_providers, true)
+    || in_array($config_imap_provider, $delegated_oauth_providers, true);
+$app_oauth_needed = $config_smtp_provider === 'microsoft_app_oauth'
+    || $config_imap_provider === 'microsoft_app_oauth';
+$oauth_needed = $delegated_oauth_needed || $app_oauth_needed;
 
 // ---- Active tab -------------------------------------------------------------
 // The tab lives in the URL (?tab=imap) so it can be linked, bookmarked, survives a
@@ -32,28 +36,41 @@ if (defined('BASE_URL') && !empty(BASE_URL)) {
 }
 
 // ---- Readiness checks (drive the Tests tab) --------------------------------
-$smtp_standard_ready = !empty($config_smtp_host) && !empty($config_smtp_port)
+$smtp_standard_ready = $config_smtp_provider === 'standard_smtp'
+    && !empty($config_smtp_host) && !empty($config_smtp_port)
     && !empty($config_mail_from_email) && !empty($config_mail_from_name);
 
-$smtp_oauth_ready = in_array($config_smtp_provider, ['google_oauth', 'microsoft_oauth'], true)
+$smtp_delegated_oauth_ready = in_array($config_smtp_provider, $delegated_oauth_providers, true)
     && !empty($config_mail_from_email) && !empty($config_mail_from_name)
     && !empty($config_mail_oauth_client_id) && !empty($config_mail_oauth_client_secret)
     && !empty($config_mail_oauth_refresh_token)
     && ($config_smtp_provider !== 'microsoft_oauth' || !empty($config_mail_oauth_tenant_id));
 
-$imap_standard_ready = !empty($config_imap_username) && !empty($config_imap_password)
+$smtp_app_oauth_ready = $config_smtp_provider === 'microsoft_app_oauth'
+    && filter_var($config_smtp_username, FILTER_VALIDATE_EMAIL)
+    && !empty($config_mail_from_email) && !empty($config_mail_from_name)
+    && !empty($config_mail_oauth_app_tenant_id) && !empty($config_mail_oauth_app_client_id)
+    && !empty($config_mail_oauth_app_client_secret);
+
+$imap_standard_ready = $config_imap_provider === 'standard_imap'
+    && !empty($config_imap_username) && !empty($config_imap_password)
     && !empty($config_imap_host) && !empty($config_imap_port);
 
-$imap_oauth_ready = in_array($config_imap_provider, ['google_oauth', 'microsoft_oauth'], true)
+$imap_delegated_oauth_ready = in_array($config_imap_provider, $delegated_oauth_providers, true)
     && !empty($config_imap_username)
     && !empty($config_mail_oauth_client_id) && !empty($config_mail_oauth_client_secret)
     && !empty($config_mail_oauth_refresh_token)
     && ($config_imap_provider !== 'microsoft_oauth' || !empty($config_mail_oauth_tenant_id));
 
+$imap_app_oauth_ready = $config_imap_provider === 'microsoft_app_oauth'
+    && filter_var($config_imap_username, FILTER_VALIDATE_EMAIL)
+    && !empty($config_mail_oauth_app_tenant_id) && !empty($config_mail_oauth_app_client_id)
+    && !empty($config_mail_oauth_app_client_secret);
+
 $oauth_provider_for_test = '';
-if (in_array($config_imap_provider, ['google_oauth', 'microsoft_oauth'], true)) {
+if (in_array($config_imap_provider, $delegated_oauth_providers, true)) {
     $oauth_provider_for_test = $config_imap_provider;
-} elseif (in_array($config_smtp_provider, ['google_oauth', 'microsoft_oauth'], true)) {
+} elseif (in_array($config_smtp_provider, $delegated_oauth_providers, true)) {
     $oauth_provider_for_test = $config_smtp_provider;
 }
 
@@ -62,8 +79,12 @@ $oauth_has_required_fields = !empty($oauth_provider_for_test)
     && !empty($config_mail_oauth_refresh_token)
     && ($oauth_provider_for_test !== 'microsoft_oauth' || !empty($config_mail_oauth_tenant_id));
 
-$send_ready = $smtp_standard_ready || $smtp_oauth_ready;
-$imap_ready = $imap_standard_ready || $imap_oauth_ready;
+$app_oauth_has_required_fields = $app_oauth_needed
+    && !empty($config_mail_oauth_app_tenant_id) && !empty($config_mail_oauth_app_client_id)
+    && !empty($config_mail_oauth_app_client_secret);
+
+$send_ready = $smtp_standard_ready || $smtp_delegated_oauth_ready || $smtp_app_oauth_ready;
+$imap_ready = $imap_standard_ready || $imap_delegated_oauth_ready || $imap_app_oauth_ready;
 ?>
 
 <div class="card card-dark">
@@ -116,7 +137,8 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
                                 <option value="" <?php if (empty($config_smtp_provider)) { echo 'selected'; } ?>>None (Disabled)</option>
                                 <option value="standard_smtp" <?php if ($config_smtp_provider === 'standard_smtp') { echo 'selected'; } ?>>Standard SMTP (Username/Password)</option>
                                 <option value="google_oauth" <?php if ($config_smtp_provider === 'google_oauth') { echo 'selected'; } ?>>Google Workspace (OAuth)</option>
-                                <option value="microsoft_oauth" <?php if ($config_smtp_provider === 'microsoft_oauth') { echo 'selected'; } ?>>Microsoft 365 (OAuth)</option>
+                                <option value="microsoft_oauth" <?php if ($config_smtp_provider === 'microsoft_oauth') { echo 'selected'; } ?>>Microsoft 365 (Delegated OAuth)</option>
+                                <option value="microsoft_app_oauth" <?php if ($config_smtp_provider === 'microsoft_app_oauth') { echo 'selected'; } ?>>Microsoft 365 (Application OAuth)</option>
                             </select>
                         </div>
                         <small class="form-text text-muted" id="smtp_provider_hint">Choose your outbound mail provider.</small>
@@ -197,7 +219,8 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
                                 <option value="" <?php if (empty($config_imap_provider)) { echo 'selected'; } ?>>None (Disabled)</option>
                                 <option value="standard_imap" <?php if ($config_imap_provider === 'standard_imap') { echo 'selected'; } ?>>Standard IMAP (Username/Password)</option>
                                 <option value="google_oauth" <?php if ($config_imap_provider === 'google_oauth') { echo 'selected'; } ?>>Google Workspace (OAuth)</option>
-                                <option value="microsoft_oauth" <?php if ($config_imap_provider === 'microsoft_oauth') { echo 'selected'; } ?>>Microsoft 365 (OAuth)</option>
+                                <option value="microsoft_oauth" <?php if ($config_imap_provider === 'microsoft_oauth') { echo 'selected'; } ?>>Microsoft 365 (Delegated OAuth)</option>
+                                <option value="microsoft_app_oauth" <?php if ($config_imap_provider === 'microsoft_app_oauth') { echo 'selected'; } ?>>Microsoft 365 (Application OAuth)</option>
                             </select>
                         </div>
                         <small class="form-text text-muted" id="imap_provider_hint">Select your mailbox provider.</small>
@@ -270,60 +293,104 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
                     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                     <input type="hidden" name="tab" value="oauth">
 
-                    <div class="alert alert-secondary" id="oauth_hint">
-                        <i class="fas fa-fw fa-info-circle mr-2"></i>These credentials are shared by any Sending or Receiving provider set to Google / Microsoft OAuth.
-                    </div>
+                    <div id="delegated_oauth_section">
+                        <h5 class="text-bold">Delegated / User OAuth</h5>
+                        <div class="alert alert-secondary" id="delegated_oauth_hint">
+                            <i class="fas fa-fw fa-info-circle mr-2"></i>These credentials use an interactive user consent flow and a refresh token.
+                        </div>
 
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label>OAuth Client ID</label>
-                            <div class="input-group">
-                                <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-id-badge"></i></span></div>
-                                <input type="text" class="form-control" name="config_mail_oauth_client_id" id="config_mail_oauth_client_id" placeholder="Application (client) ID" maxlength="255" value="<?= escapeHtml($config_mail_oauth_client_id ?? '') ?>">
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>OAuth Client ID</label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-id-badge"></i></span></div>
+                                    <input type="text" class="form-control" name="config_mail_oauth_client_id" id="config_mail_oauth_client_id" placeholder="Application (client) ID" maxlength="255" value="<?= escapeHtml($config_mail_oauth_client_id ?? '') ?>">
+                                </div>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label>OAuth Client Secret</label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-key"></i></span></div>
+                                    <input type="password" class="form-control" data-toggle="password" name="config_mail_oauth_client_secret" id="config_mail_oauth_client_secret" placeholder="<?= !empty($config_mail_oauth_client_secret) ? 'Stored — leave blank to keep' : 'Client secret value' ?>" maxlength="255" value="" autocomplete="new-password">
+                                    <div class="input-group-append"><span class="input-group-text"><i class="fa fa-fw fa-eye"></i></span></div>
+                                </div>
                             </div>
                         </div>
-                        <div class="form-group col-md-6">
-                            <label>OAuth Client Secret</label>
+
+                        <div class="form-group" id="tenant_row" style="display:none;">
+                            <label>Tenant ID <small class="text-muted">— delegated Microsoft 365 only</small></label>
+                            <div class="input-group">
+                                <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-building"></i></span></div>
+                                <input type="text" class="form-control" name="config_mail_oauth_tenant_id" placeholder="Directory (tenant) ID" maxlength="255" value="<?= escapeHtml($config_mail_oauth_tenant_id ?? '') ?>">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Refresh Token</label>
+                                <textarea class="form-control" name="config_mail_oauth_refresh_token" rows="2" placeholder="<?= !empty($config_mail_oauth_refresh_token) ? 'Stored — leave blank to keep' : 'Paste a refresh token, or use Connect below' ?>"></textarea>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label>Access Token <small class="text-muted">— optional</small></label>
+                                <textarea class="form-control" name="config_mail_oauth_access_token" rows="2" placeholder="<?= !empty($config_mail_oauth_access_token) ? 'Stored — leave blank to keep' : 'Leave blank — auto-refreshed from the refresh token' ?>"></textarea>
+                                <small class="form-text text-muted">Expires at: <?= !empty($config_mail_oauth_access_token_expires_at) ? escapeHtml($config_mail_oauth_access_token_expires_at) : 'n/a' ?></small>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="ms_connect_group" style="display:none;">
+                            <label>Microsoft OAuth Connect (Web)</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-link"></i></span></div>
+                                <input type="text" class="form-control" readonly value="<?= escapeHtml($mail_oauth_callback_uri) ?>">
+                                <div class="input-group-append">
+                                    <button type="submit" name="oauth_connect_microsoft_mail" class="btn btn-outline-primary">
+                                        <i class="fab fa-fw fa-microsoft mr-2"></i>Connect Microsoft 365
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="form-text text-muted">Add this callback URI in your Entra App Registration, save credentials, then click Connect to store the refresh token automatically.</small>
+                        </div>
+                    </div>
+
+                    <div id="application_oauth_section">
+                        <hr>
+                        <h5 class="text-bold">Microsoft Application OAuth</h5>
+                        <div class="alert alert-secondary">
+                            <i class="fas fa-fw fa-info-circle mr-2"></i>Uses the client-credentials grant without an interactive user, callback URI, or refresh token.
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label>Tenant ID</label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-building"></i></span></div>
+                                    <input type="text" class="form-control" name="config_mail_oauth_app_tenant_id" maxlength="255" placeholder="Directory (tenant) ID" value="<?= escapeHtml($config_mail_oauth_app_tenant_id ?? '') ?>">
+                                </div>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label>Client / Application ID</label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-id-badge"></i></span></div>
+                                    <input type="text" class="form-control" name="config_mail_oauth_app_client_id" maxlength="255" placeholder="Application (client) ID" value="<?= escapeHtml($config_mail_oauth_app_client_id ?? '') ?>">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Client Secret</label>
                             <div class="input-group">
                                 <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-key"></i></span></div>
-                                <input type="password" class="form-control" data-toggle="password" name="config_mail_oauth_client_secret" id="config_mail_oauth_client_secret" placeholder="Client secret value" maxlength="255" value="<?= escapeHtml($config_mail_oauth_client_secret ?? '') ?>" autocomplete="new-password">
+                                <input type="password" class="form-control" data-toggle="password" name="config_mail_oauth_app_client_secret" maxlength="255" placeholder="<?= !empty($config_mail_oauth_app_client_secret) ? 'Stored — leave blank to keep' : 'Client secret value' ?>" value="" autocomplete="new-password">
                                 <div class="input-group-append"><span class="input-group-text"><i class="fa fa-fw fa-eye"></i></span></div>
                             </div>
+                            <small class="form-text text-muted">Cached access token expires at: <?= !empty($config_mail_oauth_app_access_token_expires_at) ? escapeHtml($config_mail_oauth_app_access_token_expires_at) : 'n/a' ?></small>
                         </div>
-                    </div>
 
-                    <div class="form-group" id="tenant_row" style="display:none;">
-                        <label>Tenant ID <small class="text-muted">— Microsoft 365 only</small></label>
-                        <div class="input-group">
-                            <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-building"></i></span></div>
-                            <input type="text" class="form-control" name="config_mail_oauth_tenant_id" placeholder="Directory (tenant) ID, e.g. 00000000-0000-0000-0000-000000000000" maxlength="255" value="<?= escapeHtml($config_mail_oauth_tenant_id ?? '') ?>">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label>Refresh Token</label>
-                            <textarea class="form-control" name="config_mail_oauth_refresh_token" rows="2" placeholder="Paste a refresh token, or use the Connect button below to fetch one"><?= escapeHtml($config_mail_oauth_refresh_token ?? '') ?></textarea>
-                        </div>
-                        <div class="form-group col-md-6">
-                            <label>Access Token <small class="text-muted">— optional</small></label>
-                            <textarea class="form-control" name="config_mail_oauth_access_token" rows="2" placeholder="Leave blank — auto-refreshed from the refresh token"><?= escapeHtml($config_mail_oauth_access_token ?? '') ?></textarea>
-                            <small class="form-text text-muted">Expires at: <?= !empty($config_mail_oauth_access_token_expires_at) ? htmlspecialchars($config_mail_oauth_access_token_expires_at) : 'n/a' ?></small>
-                        </div>
-                    </div>
-
-                    <div class="form-group" id="ms_connect_group" style="display:none;">
-                        <label>Microsoft OAuth Connect (Web)</label>
-                        <div class="input-group">
-                            <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-fw fa-link"></i></span></div>
-                            <input type="text" class="form-control" readonly value="<?= htmlspecialchars($mail_oauth_callback_uri) ?>">
-                            <div class="input-group-append">
-                                <button type="submit" name="oauth_connect_microsoft_mail" class="btn btn-outline-primary">
-                                    <i class="fab fa-fw fa-microsoft mr-2"></i>Connect Microsoft 365
-                                </button>
-                            </div>
-                        </div>
-                        <small class="form-text text-muted">Add this callback URI in your Entra App Registration, save credentials, then click Connect to store the refresh token automatically.</small>
+                        <p class="text-muted">
+                            IMAP requires the Office 365 Exchange Online <code>IMAP.AccessAsApp</code> application permission, admin consent, and Exchange service-principal mailbox authorization. For SMTP, use either the current scoped Exchange Application RBAC role <code>Application SMTP.SendAsApp</code>, or the Entra <code>SMTP.SendAsApp</code> application permission with the required Exchange mailbox / Send As authorization. Microsoft advises not adding the Entra permission when using the RBAC onboarding model.
+                            See the <a href="https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth" target="_blank" rel="noopener">protocol setup guidance</a> and
+                            <a href="https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/smtp-app-rbac-onboarding" target="_blank" rel="noopener">SMTP Application RBAC guidance</a>.
+                        </p>
                     </div>
 
                     <hr>
@@ -378,9 +445,15 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
             <!-- ============================ TESTS ============================ -->
             <div class="tab-pane fade <?php if ($active_tab === 'tests') { echo 'show active'; } ?>" id="tab-tests" role="tabpanel">
 
-                <?php if (!$send_ready && !$imap_ready && !$oauth_has_required_fields) { ?>
+                <?php if (!$send_ready && !$imap_ready && !$oauth_has_required_fields && !$app_oauth_needed) { ?>
                     <div class="alert alert-secondary mb-0">
                         <i class="fas fa-fw fa-info-circle mr-2"></i>Finish configuring Sending, Receiving, or OAuth (plus at least one From address) to unlock the tests.
+                    </div>
+                <?php } ?>
+
+                <?php if ($app_oauth_needed && !$app_oauth_has_required_fields) { ?>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-fw fa-exclamation-triangle mr-2"></i>Microsoft Application OAuth requires a tenant ID, client / application ID, and client secret before token or connection testing.
                     </div>
                 <?php } ?>
 
@@ -419,7 +492,7 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
                 <?php } ?>
 
                 <?php if ($oauth_has_required_fields) { ?>
-                <div>
+                <div class="mb-4">
                     <h6 class="text-bold"><i class="fas fa-fw fa-sync-alt mr-2"></i>Test OAuth Token Refresh</h6>
                     <form action="post.php" method="post" autocomplete="off">
                         <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
@@ -427,6 +500,18 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
                         <input type="hidden" name="oauth_provider" value="<?= htmlspecialchars($oauth_provider_for_test) ?>">
                         <p class="text-muted mb-2">Validates the refresh token and stores a new access token for <?= $oauth_provider_for_test === 'microsoft_oauth' ? 'Microsoft 365' : 'Google Workspace' ?>.</p>
                         <button type="submit" name="test_oauth_token_refresh" class="btn btn-success"><i class="fas fa-fw fa-sync-alt mr-2"></i>Test OAuth Token Refresh</button>
+                    </form>
+                </div>
+                <?php } ?>
+
+                <?php if ($app_oauth_has_required_fields) { ?>
+                <div>
+                    <h6 class="text-bold"><i class="fas fa-fw fa-key mr-2"></i>Test Application OAuth Token</h6>
+                    <form action="post.php" method="post" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="tab" value="tests">
+                        <p class="text-muted mb-2">Performs a Microsoft client-credentials request and caches the returned access token without displaying it.</p>
+                        <button type="submit" name="test_microsoft_app_oauth_token" class="btn btn-success"><i class="fas fa-fw fa-key mr-2"></i>Test Application OAuth Token</button>
                     </form>
                 </div>
                 <?php } ?>
@@ -444,7 +529,9 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
     function toggle(el, v) { show(el, v); setDisabled(el, !v); }
     function val(s) { return (s && s.value) || ''; }
     function isStd(v) { return v === 'standard_imap' || v === 'standard_smtp'; }
-    function isOauth(v) { return v === 'google_oauth' || v === 'microsoft_oauth'; }
+    function isDelegatedOauth(v) { return v === 'google_oauth' || v === 'microsoft_oauth'; }
+    function isApplicationOauth(v) { return v === 'microsoft_app_oauth'; }
+    function isOauth(v) { return isDelegatedOauth(v) || isApplicationOauth(v); }
 
     // ---- Numeric-only inputs (ports): strip anything that isn't a digit ----
     document.querySelectorAll('.numeric-only').forEach(function (el) {
@@ -504,7 +591,9 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
     const oauthTabItem = document.getElementById('tabitem-oauth');
     const tenantRow = document.getElementById('tenant_row');
     const msConnect = document.getElementById('ms_connect_group');
-    const oauthHint = document.getElementById('oauth_hint');
+    const delegatedSection = document.getElementById('delegated_oauth_section');
+    const applicationSection = document.getElementById('application_oauth_section');
+    const delegatedHint = document.getElementById('delegated_oauth_hint');
     const oauthClientId = document.getElementById('config_mail_oauth_client_id');
     const oauthClientSecret = document.getElementById('config_mail_oauth_client_secret');
 
@@ -515,12 +604,17 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
         toggle(smtpUser, isStd(sv) || isOauth(sv));
         toggle(smtpPass, isStd(sv));
         show(smtpPtr, isOauth(sv));
-        if (smtpUserLb) smtpUserLb.textContent = isOauth(sv) ? 'Authenticated User Email (licensed user)' : 'SMTP Username';
-        if (smtpUserIn) smtpUserIn.placeholder = isOauth(sv) ? 'licensed.user@yourcompany.com' : 'usually your full email address';
-        if (smtpUserHt) smtpUserHt.innerHTML = isOauth(sv)
-            ? 'The licensed user that completed the OAuth flow &mdash; <strong>not</strong> the From / shared-mailbox address. Becomes the <code>user=</code> identity in the XOAUTH2 string.'
-            : 'Leave blank if no authentication is required.';
-        if (smtpHint) smtpHint.textContent = isOauth(sv) ? 'OAuth: set the authenticated user email here; app credentials live in the OAuth tab.'
+        if (smtpUserLb) smtpUserLb.textContent = isApplicationOauth(sv) ? 'Mailbox Email'
+            : isDelegatedOauth(sv) ? 'Authenticated User Email (licensed user)' : 'SMTP Username';
+        if (smtpUserIn) smtpUserIn.placeholder = isApplicationOauth(sv) ? 'mailbox@example.com'
+            : isDelegatedOauth(sv) ? 'licensed.user@example.com' : 'usually your full email address';
+        if (smtpUserHt) smtpUserHt.innerHTML = isApplicationOauth(sv)
+            ? 'The Microsoft 365 mailbox used as the <code>user=</code> identity in XOAUTH2. The Entra / Exchange service principal must be authorized to send as required.'
+            : isDelegatedOauth(sv)
+                ? 'The licensed user that completed the OAuth flow &mdash; <strong>not</strong> the From / shared-mailbox address. Becomes the <code>user=</code> identity in the XOAUTH2 string.'
+                : 'Leave blank if no authentication is required.';
+        if (smtpHint) smtpHint.textContent = isApplicationOauth(sv) ? 'Application OAuth: set the mailbox email here; client credentials live in the OAuth tab.'
+            : isDelegatedOauth(sv) ? 'Delegated OAuth: set the authenticated user email here; app credentials live in the OAuth tab.'
             : isStd(sv) ? 'Standard: host, port, encryption, username & password.' : 'Disabled.';
 
         toggle(imapConn, isStd(iv));
@@ -528,26 +622,34 @@ $imap_ready = $imap_standard_ready || $imap_oauth_ready;
         toggle(imapPass, isStd(iv));
         show(imapPtr, isOauth(iv));
         if (imapUserLb) imapUserLb.textContent = isOauth(iv) ? 'Mailbox Email (monitored inbox)' : 'IMAP Username';
-        if (imapUserHt) imapUserHt.textContent = isOauth(iv)
-            ? 'The mailbox you monitor for tickets (the account the refresh token was issued for).'
+        if (imapUserHt) imapUserHt.innerHTML = isApplicationOauth(iv)
+            ? 'The monitored Microsoft 365 mailbox and the <code>user=</code> identity in XOAUTH2.'
+            : isDelegatedOauth(iv)
+                ? 'The mailbox you monitor for tickets (the account the refresh token was issued for).'
             : 'The mailbox address to monitor for incoming tickets.';
         if (imapHint) imapHint.textContent = isOauth(iv) ? 'OAuth: set the mailbox here; app credentials live in the OAuth tab.'
             : isStd(iv) ? 'Standard: host, port, encryption, username & password.' : 'Disabled.';
 
         const anyOauth = isOauth(sv) || isOauth(iv);
-        const anyMs = sv === 'microsoft_oauth' || iv === 'microsoft_oauth';
+        const anyDelegated = isDelegatedOauth(sv) || isDelegatedOauth(iv);
+        const anyDelegatedMs = sv === 'microsoft_oauth' || iv === 'microsoft_oauth';
+        const anyApplication = isApplicationOauth(sv) || isApplicationOauth(iv);
+        const showUnselectedSections = forcedOauthTab && !anyOauth;
 
         show(oauthTabItem, anyOauth || forcedOauthTab);
-        toggle(tenantRow, anyMs);
-        toggle(msConnect, anyMs);
-        if (oauthClientId) oauthClientId.placeholder = anyMs
+        toggle(delegatedSection, anyDelegated || showUnselectedSections);
+        toggle(applicationSection, anyApplication || showUnselectedSections);
+        toggle(tenantRow, anyDelegatedMs);
+        toggle(msConnect, anyDelegatedMs);
+        if (oauthClientId) oauthClientId.placeholder = anyDelegatedMs
             ? 'Application (client) ID, e.g. 00000000-0000-0000-0000-000000000000'
             : 'xxxxxxxxxxxx.apps.googleusercontent.com';
-        if (oauthClientSecret) oauthClientSecret.placeholder = anyMs ? 'Entra client secret value' : 'Google client secret';
-        if (oauthHint) oauthHint.innerHTML = anyMs
-            ? '<i class="fas fa-fw fa-info-circle mr-2"></i>Microsoft 365: Client ID / Secret / Tenant from Entra ID; refresh token via the Connect button below.'
-            : anyOauth ? '<i class="fas fa-fw fa-info-circle mr-2"></i>Google Workspace: Client ID / Secret from Google Cloud; refresh token obtained via the consent flow.'
-            : '<i class="fas fa-fw fa-info-circle mr-2"></i>These credentials are shared by any Sending or Receiving provider set to Google / Microsoft OAuth.';
+        if (oauthClientSecret && !oauthClientSecret.placeholder.startsWith('Stored')) {
+            oauthClientSecret.placeholder = anyDelegatedMs ? 'Entra client secret value' : 'Google client secret';
+        }
+        if (delegatedHint) delegatedHint.innerHTML = anyDelegatedMs
+            ? '<i class="fas fa-fw fa-info-circle mr-2"></i>Delegated Microsoft 365: Client ID / Secret / Tenant from Entra ID; refresh token via the interactive Connect button below.'
+            : '<i class="fas fa-fw fa-info-circle mr-2"></i>Google Workspace: Client ID / Secret from Google Cloud; refresh token obtained through user consent.';
 
         if (!anyOauth && !forcedOauthTab) {
             const oauthLink = document.querySelector('#mailTabs .nav-link[data-target="#tab-oauth"]');
