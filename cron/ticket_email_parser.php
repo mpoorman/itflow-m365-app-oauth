@@ -504,7 +504,7 @@ if ($imap_provider === '') {
 }
 
 /** ------------------------------------------------------------------
- * ImapEngine setup (supports Standard / Google OAuth / Microsoft OAuth)
+ * ImapEngine setup (supports Standard / Google OAuth / Microsoft delegated and application OAuth)
  * ------------------------------------------------------------------ */
 use DirectoryTree\ImapEngine\Mailbox;
 
@@ -536,6 +536,23 @@ if ($imap_provider === 'google_oauth') {
     $pass = getMicrosoftAccessToken($user);
     if (empty($pass)) {
         logApp("Cron-Email-Parser", "error", "Microsoft OAuth: no usable access token (check refresh token/client credentials/tenant).");
+        cronJobStop('', 1);
+    }
+} elseif ($imap_provider === 'microsoft_app_oauth') {
+    $host = 'outlook.office365.com';
+    $port = 993;
+    $encr = 'ssl';
+    $auth = 'oauth';
+
+    if (!filter_var($user, FILTER_VALIDATE_EMAIL)) {
+        logApp("Cron-Email-Parser", "error", "Microsoft application OAuth: configured IMAP mailbox is not a valid email address.");
+        cronJobStop('', 1);
+    }
+
+    $token_result = getMicrosoftMailApplicationAccessToken();
+    $pass = $token_result['access_token'] ?? '';
+    if (empty($token_result['ok']) || empty($pass)) {
+        logApp("Cron-Email-Parser", "error", "Microsoft application OAuth: no usable access token (check application credentials and Exchange authorization).");
         cronJobStop('', 1);
     }
 } else {
