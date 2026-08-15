@@ -18,11 +18,14 @@ if (isset($_POST['oauth_connect_microsoft_mail'])) {
     validateCSRFToken();
 
     // Save the OAuth credential fields from this form so the auth flow uses the latest inputs
-    $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? '');
-    $config_mail_oauth_client_secret = escapeSql($_POST['config_mail_oauth_client_secret'] ?? '');
+    $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? $config_mail_oauth_client_id);
+    $oauth_client_secret_input       = trim((string)($_POST['config_mail_oauth_client_secret'] ?? ''));
+    $config_mail_oauth_client_secret = escapeSql($oauth_client_secret_input !== '' ? $oauth_client_secret_input : $config_mail_oauth_client_secret);
     $config_mail_oauth_tenant_id     = escapeSql($_POST['config_mail_oauth_tenant_id'] ?? $config_mail_oauth_tenant_id);
-    $config_mail_oauth_refresh_token = escapeSql($_POST['config_mail_oauth_refresh_token'] ?? '');
-    $config_mail_oauth_access_token  = escapeSql($_POST['config_mail_oauth_access_token'] ?? '');
+    $oauth_refresh_token_input       = trim((string)($_POST['config_mail_oauth_refresh_token'] ?? ''));
+    $oauth_access_token_input        = trim((string)($_POST['config_mail_oauth_access_token'] ?? ''));
+    $config_mail_oauth_refresh_token = escapeSql($oauth_refresh_token_input !== '' ? $oauth_refresh_token_input : $config_mail_oauth_refresh_token);
+    $config_mail_oauth_access_token  = escapeSql($oauth_access_token_input !== '' ? $oauth_access_token_input : $config_mail_oauth_access_token);
 
     mysqli_query($mysqli, "UPDATE settings SET
         config_mail_oauth_client_id     = '$config_mail_oauth_client_id',
@@ -84,19 +87,34 @@ if (isset($_POST['edit_mail_smtp_settings'])) {
 
     validateCSRFToken();
 
-    $config_smtp_provider            = escapeSql($_POST['config_smtp_provider']);
+    $smtp_provider_input = (string)($_POST['config_smtp_provider'] ?? '');
+    $allowed_smtp_providers = ['', 'standard_smtp', 'google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'];
+    if (!in_array($smtp_provider_input, $allowed_smtp_providers, true)) {
+        flashAlert("SMTP settings update failed: unsupported provider.", 'error');
+        redirect($mail_tab_redirect);
+    }
+
+    $config_smtp_provider   = escapeSql($smtp_provider_input);
     $config_smtp_host       = escapeSql($_POST['config_smtp_host'] ?? $config_smtp_host);
     $config_smtp_port       = intval($_POST['config_smtp_port'] ?? $config_smtp_port);
     $config_smtp_encryption = escapeSql($_POST['config_smtp_encryption'] ?? $config_smtp_encryption);
-    $config_smtp_username   = escapeSql($_POST['config_smtp_username'] ?? $config_smtp_username);
+    $smtp_username_input    = trim((string)($_POST['config_smtp_username'] ?? $config_smtp_username));
+    $config_smtp_username   = escapeSql($smtp_username_input);
     $config_smtp_password   = escapeSql($_POST['config_smtp_password'] ?? $config_smtp_password);
+
+    if ($smtp_provider_input === 'microsoft_app_oauth'
+        && (strlen($smtp_username_input) > 200 || !filter_var($smtp_username_input, FILTER_VALIDATE_EMAIL))
+    ) {
+        flashAlert("SMTP settings update failed: Microsoft Application OAuth requires a valid mailbox email.", 'error');
+        redirect($mail_tab_redirect);
+    }
 
     // The host/port/encryption/password inputs are hidden and disabled for OAuth
     // providers, so they never post and the ?? fallbacks above keep whatever the
     // install used before. Clear them instead: the endpoint is fixed by provider,
     // and the stored values would otherwise be both wrong and unreachable from
     // the settings page. The mailbox password is no longer used either.
-    if ($config_smtp_provider === 'google_oauth' || $config_smtp_provider === 'microsoft_oauth') {
+    if (in_array($config_smtp_provider, ['google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'], true)) {
         $config_smtp_host       = '';
         $config_smtp_port       = 0;
         $config_smtp_encryption = '';
@@ -126,16 +144,31 @@ if (isset($_POST['edit_mail_imap_settings'])) {
 
     validateCSRFToken();
 
-    $config_imap_provider            = escapeSql($_POST['config_imap_provider']);
+    $imap_provider_input = (string)($_POST['config_imap_provider'] ?? '');
+    $allowed_imap_providers = ['', 'standard_imap', 'google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'];
+    if (!in_array($imap_provider_input, $allowed_imap_providers, true)) {
+        flashAlert("IMAP settings update failed: unsupported provider.", 'error');
+        redirect($mail_tab_redirect);
+    }
+
+    $config_imap_provider   = escapeSql($imap_provider_input);
     $config_imap_host       = escapeSql($_POST['config_imap_host'] ?? $config_imap_host);
     $config_imap_port       = intval($_POST['config_imap_port'] ?? $config_imap_port);
     $config_imap_encryption = escapeSql($_POST['config_imap_encryption'] ?? $config_imap_encryption);
-    $config_imap_username   = escapeSql($_POST['config_imap_username'] ?? $config_imap_username);
+    $imap_username_input    = trim((string)($_POST['config_imap_username'] ?? $config_imap_username));
+    $config_imap_username   = escapeSql($imap_username_input);
     $config_imap_password   = escapeSql($_POST['config_imap_password'] ?? $config_imap_password);
+
+    if ($imap_provider_input === 'microsoft_app_oauth'
+        && (strlen($imap_username_input) > 200 || !filter_var($imap_username_input, FILTER_VALIDATE_EMAIL))
+    ) {
+        flashAlert("IMAP settings update failed: Microsoft Application OAuth requires a valid mailbox email.", 'error');
+        redirect($mail_tab_redirect);
+    }
 
     // Same as the SMTP handler above - the connection fields are hidden for OAuth
     // providers and never post, so drop the leftovers rather than carrying them.
-    if ($config_imap_provider === 'google_oauth' || $config_imap_provider === 'microsoft_oauth') {
+    if (in_array($config_imap_provider, ['google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'], true)) {
         $config_imap_host       = '';
         $config_imap_port       = 0;
         $config_imap_encryption = '';
@@ -165,18 +198,46 @@ if (isset($_POST['edit_mail_oauth_settings'])) {
 
     validateCSRFToken();
 
-    $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? '');
-    $config_mail_oauth_client_secret = escapeSql($_POST['config_mail_oauth_client_secret'] ?? '');
+    $oauth_client_secret_input = trim((string)($_POST['config_mail_oauth_client_secret'] ?? ''));
+    $oauth_refresh_token_input = trim((string)($_POST['config_mail_oauth_refresh_token'] ?? ''));
+    $oauth_access_token_input = trim((string)($_POST['config_mail_oauth_access_token'] ?? ''));
+
+    $config_mail_oauth_client_id     = escapeSql($_POST['config_mail_oauth_client_id'] ?? $config_mail_oauth_client_id);
+    $config_mail_oauth_client_secret = escapeSql($oauth_client_secret_input !== '' ? $oauth_client_secret_input : $config_mail_oauth_client_secret);
     $config_mail_oauth_tenant_id     = escapeSql($_POST['config_mail_oauth_tenant_id'] ?? $config_mail_oauth_tenant_id);
-    $config_mail_oauth_refresh_token = escapeSql($_POST['config_mail_oauth_refresh_token'] ?? '');
-    $config_mail_oauth_access_token  = escapeSql($_POST['config_mail_oauth_access_token'] ?? '');
+    $config_mail_oauth_refresh_token = escapeSql($oauth_refresh_token_input !== '' ? $oauth_refresh_token_input : $config_mail_oauth_refresh_token);
+    $config_mail_oauth_access_token  = escapeSql($oauth_access_token_input !== '' ? $oauth_access_token_input : $config_mail_oauth_access_token);
+
+    $app_tenant_id_input = substr(trim((string)($_POST['config_mail_oauth_app_tenant_id'] ?? $config_mail_oauth_app_tenant_id)), 0, 255);
+    $app_client_id_input = substr(trim((string)($_POST['config_mail_oauth_app_client_id'] ?? $config_mail_oauth_app_client_id)), 0, 255);
+    $app_client_secret_input = substr(trim((string)($_POST['config_mail_oauth_app_client_secret'] ?? '')), 0, 255);
+    $app_client_secret = $app_client_secret_input !== '' ? $app_client_secret_input : $config_mail_oauth_app_client_secret;
+
+    $app_credentials_changed = $app_tenant_id_input !== (string)$config_mail_oauth_app_tenant_id
+        || $app_client_id_input !== (string)$config_mail_oauth_app_client_id
+        || $app_client_secret !== (string)$config_mail_oauth_app_client_secret;
+
+    $config_mail_oauth_app_tenant_id = escapeSql($app_tenant_id_input);
+    $config_mail_oauth_app_client_id = escapeSql($app_client_id_input);
+    $config_mail_oauth_app_client_secret = escapeSql($app_client_secret);
+
+    $app_token_cache_sql = '';
+    if ($app_credentials_changed) {
+        $app_token_cache_sql = ",
+        config_mail_oauth_app_access_token = NULL,
+        config_mail_oauth_app_access_token_expires_at = NULL";
+    }
 
     mysqli_query($mysqli, "UPDATE settings SET
         config_mail_oauth_client_id     = '$config_mail_oauth_client_id',
         config_mail_oauth_client_secret = '$config_mail_oauth_client_secret',
         config_mail_oauth_tenant_id     = '$config_mail_oauth_tenant_id',
         config_mail_oauth_refresh_token = '$config_mail_oauth_refresh_token',
-        config_mail_oauth_access_token  = '$config_mail_oauth_access_token'
+        config_mail_oauth_access_token  = '$config_mail_oauth_access_token',
+        config_mail_oauth_app_tenant_id = '$config_mail_oauth_app_tenant_id',
+        config_mail_oauth_app_client_id = '$config_mail_oauth_app_client_id',
+        config_mail_oauth_app_client_secret = '$config_mail_oauth_app_client_secret'
+        $app_token_cache_sql
         WHERE company_id = 1
     ");
 
@@ -278,7 +339,7 @@ if (isset($_POST['test_email_imap'])) {
     $config_mail_oauth_access_token            = $config_mail_oauth_access_token ?? '';
     $config_mail_oauth_access_token_expires_at = $config_mail_oauth_access_token_expires_at ?? '';
 
-    $is_oauth = ($provider === 'google_oauth' || $provider === 'microsoft_oauth');
+    $is_oauth = in_array($provider, ['google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'], true);
 
     // Override, don't default - a leftover standard-IMAP host from before the
     // switch to OAuth would otherwise make this test fail against the old server
@@ -287,7 +348,7 @@ if (isset($_POST['test_email_imap'])) {
         $host       = 'imap.gmail.com';
         $port       = 993;
         $encryption = 'ssl';
-    } elseif ($provider === 'microsoft_oauth') {
+    } elseif ($provider === 'microsoft_oauth' || $provider === 'microsoft_app_oauth') {
         $host       = 'outlook.office365.com';
         $port       = 993;
         $encryption = 'ssl';
@@ -298,43 +359,16 @@ if (isset($_POST['test_email_imap'])) {
         redirect($mail_tab_redirect);
     }
 
-    $token_is_expired = function (?string $expires_at): bool {
-        if (empty($expires_at)) {
-            return true;
-        }
-
-        $ts = strtotime($expires_at);
-
-        if ($ts === false) {
-            return true;
-        }
-
-        return ($ts - 60) <= time();
-    };
-
-    $http_form_post = function (string $url, array $fields): array {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($fields, '', '&'));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
-
-        $raw = curl_exec($ch);
-        $err = curl_error($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-        curl_close($ch);
-
-        return [
-            'ok' => ($raw !== false && $code >= 200 && $code < 300),
-            'body' => $raw,
-            'code' => $code,
-            'err' => $err,
-        ];
-    };
-
     if ($is_oauth) {
-        if (!empty($config_mail_oauth_access_token) && !$token_is_expired($config_mail_oauth_access_token_expires_at)) {
+        if ($provider === 'microsoft_app_oauth') {
+            $token_result = getMicrosoftMailApplicationAccessToken();
+            if (empty($token_result['ok']) || empty($token_result['access_token'])) {
+                $token_error = escapeHtml($token_result['error'] ?? 'No usable access token was returned.');
+                flashAlert("<strong>IMAP application OAuth failed:</strong> $token_error", 'error');
+                redirect($mail_tab_redirect);
+            }
+            $password = $token_result['access_token'];
+        } elseif (!empty($config_mail_oauth_access_token) && !mailOauthTokenExpired($config_mail_oauth_access_token_expires_at)) {
             $password = $config_mail_oauth_access_token;
         } else {
             if (empty($config_mail_oauth_client_id) || empty($config_mail_oauth_client_secret) || empty($config_mail_oauth_refresh_token)) {
@@ -343,7 +377,7 @@ if (isset($_POST['test_email_imap'])) {
             }
 
             if ($provider === 'google_oauth') {
-                $response = $http_form_post('https://oauth2.googleapis.com/token', [
+                $response = httpFormPost('https://oauth2.googleapis.com/token', [
                     'client_id' => $config_mail_oauth_client_id,
                     'client_secret' => $config_mail_oauth_client_secret,
                     'refresh_token' => $config_mail_oauth_refresh_token,
@@ -356,7 +390,7 @@ if (isset($_POST['test_email_imap'])) {
                 }
 
                 $token_url = MICROSOFT_OAUTH_BASE_URL . rawurlencode($config_mail_oauth_tenant_id) . "/oauth2/v2.0/token";
-                $response = $http_form_post($token_url, [
+                $response = httpFormPost($token_url, [
                     'client_id' => $config_mail_oauth_client_id,
                     'client_secret' => $config_mail_oauth_client_secret,
                     'refresh_token' => $config_mail_oauth_refresh_token,
@@ -424,6 +458,36 @@ if (isset($_POST['test_email_imap'])) {
         flashAlert("<strong>IMAP connection failed.</strong> Check the host, port, encryption, and credentials.", 'error');
     }
 
+    redirect($mail_tab_redirect);
+}
+
+if (isset($_POST['test_microsoft_app_oauth_token'])) {
+
+    validateCSRFToken();
+
+    if ($config_smtp_provider !== 'microsoft_app_oauth' && $config_imap_provider !== 'microsoft_app_oauth') {
+        flashAlert("Application OAuth token test failed: the provider is not configured for SMTP or IMAP.", 'error');
+        redirect($mail_tab_redirect);
+    }
+
+    if (empty($config_mail_oauth_app_tenant_id)
+        || empty($config_mail_oauth_app_client_id)
+        || empty($config_mail_oauth_app_client_secret)
+    ) {
+        flashAlert("Application OAuth token test failed: tenant ID, client ID, or client secret is missing.", 'error');
+        redirect($mail_tab_redirect);
+    }
+
+    $token_result = getMicrosoftMailApplicationAccessToken(true);
+    if (empty($token_result['ok']) || empty($token_result['access_token'])) {
+        $token_error = escapeHtml($token_result['error'] ?? 'No usable access token was returned.');
+        flashAlert("Application OAuth token test failed: $token_error", 'error');
+        redirect($mail_tab_redirect);
+    }
+
+    $expires_at = escapeHtml($token_result['expires_at']);
+    logAudit("Settings", "Edit", "$session_name tested Microsoft application OAuth token acquisition for mail settings");
+    flashAlert("Application OAuth token request successful. Access token expires at $expires_at.");
     redirect($mail_tab_redirect);
 }
 
