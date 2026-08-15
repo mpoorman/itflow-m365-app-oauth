@@ -55,6 +55,9 @@ class StaticTokenProvider implements OAuthTokenProvider {
  *  Load settings
  * ======================================================================= */
 $sql_settings = mysqli_query($mysqli, "SELECT config_enable_cron, config_mail_oauth_access_token,
+    config_mail_oauth_app_access_token, config_mail_oauth_app_access_token_expires_at,
+    config_mail_oauth_app_client_id, config_mail_oauth_app_client_secret,
+    config_mail_oauth_app_tenant_id,
     config_mail_oauth_access_token_expires_at, config_mail_oauth_client_id,
     config_mail_oauth_client_secret, config_mail_oauth_refresh_token,
     config_mail_oauth_tenant_id, config_smtp_encryption, config_smtp_host,
@@ -71,13 +74,18 @@ $config_smtp_port        = intval($row['config_smtp_port']);
 $config_smtp_encryption  = $row['config_smtp_encryption'];
 
 // SMTP provider + shared OAuth fields
-$config_smtp_provider                      = $row['config_smtp_provider']; // 'standard_smtp' | 'google_oauth' | 'microsoft_oauth'
+$config_smtp_provider                      = $row['config_smtp_provider']; // standard, Google OAuth, Microsoft delegated/application OAuth
 $config_mail_oauth_client_id               = $row['config_mail_oauth_client_id'] ?? '';
 $config_mail_oauth_client_secret           = $row['config_mail_oauth_client_secret'] ?? '';
 $config_mail_oauth_tenant_id               = $row['config_mail_oauth_tenant_id'] ?? '';
 $config_mail_oauth_refresh_token           = $row['config_mail_oauth_refresh_token'] ?? '';
 $config_mail_oauth_access_token            = $row['config_mail_oauth_access_token'] ?? '';
 $config_mail_oauth_access_token_expires_at = $row['config_mail_oauth_access_token_expires_at'] ?? '';
+$config_mail_oauth_app_tenant_id            = $row['config_mail_oauth_app_tenant_id'] ?? '';
+$config_mail_oauth_app_client_id            = $row['config_mail_oauth_app_client_id'] ?? '';
+$config_mail_oauth_app_client_secret        = $row['config_mail_oauth_app_client_secret'] ?? '';
+$config_mail_oauth_app_access_token         = $row['config_mail_oauth_app_access_token'] ?? '';
+$config_mail_oauth_app_access_token_expires_at = $row['config_mail_oauth_app_access_token_expires_at'] ?? '';
 
 if ($config_enable_cron == 0) {
     logApp("Cron-Mail-Queue", "error", "Cron Mail Queue unable to run - cron not enabled in admin settings.");
@@ -213,7 +221,7 @@ function sendQueueEmail(
         $port       = 587;
         $encryption = 'tls';
         if (!$username) $username = $from_email;
-    } elseif ($provider === 'microsoft_oauth') {
+    } elseif ($provider === 'microsoft_oauth' || $provider === 'microsoft_app_oauth') {
         $host       = 'smtp.office365.com';
         $port       = 587;
         $encryption = 'tls';
@@ -239,21 +247,30 @@ function sendQueueEmail(
         $mail->SMTPSecure = $enc; // 'tls' | 'ssl'
     }
 
-    if ($provider === 'google_oauth' || $provider === 'microsoft_oauth') {
+    if (in_array($provider, ['google_oauth', 'microsoft_oauth', 'microsoft_app_oauth'], true)) {
         // XOAUTH2
         $mail->SMTPAuth = true;
         $mail->AuthType = 'XOAUTH2';
         $mail->Username = $username;
 
-        $access_token = resolveMailOauthAccessToken(
-            $provider,
-            trim($oauth_client_id),
-            trim($oauth_client_secret),
-            trim($oauth_tenant_id),
-            trim($oauth_refresh_token),
-            trim($oauth_access_token),
-            trim($oauth_access_token_expires_at)
-        );
+        if ($provider === 'microsoft_app_oauth') {
+            if (!filter_var($username, FILTER_VALIDATE_EMAIL)) {
+                throw new Exception("Microsoft application OAuth requires a valid SMTP mailbox email.");
+            }
+
+            $token_result = getMicrosoftMailApplicationAccessToken();
+            $access_token = $token_result['access_token'] ?? '';
+        } else {
+            $access_token = resolveMailOauthAccessToken(
+                $provider,
+                trim($oauth_client_id),
+                trim($oauth_client_secret),
+                trim($oauth_tenant_id),
+                trim($oauth_refresh_token),
+                trim($oauth_access_token),
+                trim($oauth_access_token_expires_at)
+            );
+        }
 
         if (empty($access_token)) {
             throw new Exception("Missing OAuth access token for XOAUTH2 SMTP.");
